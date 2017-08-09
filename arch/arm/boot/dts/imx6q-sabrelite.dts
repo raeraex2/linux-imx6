@@ -94,3 +94,13 @@
 	ipu_id = <1>;
 	csi_id = <1>;
 };
+
+/* hid over i2c */
+&i2c3 {
+    i2c-hid-cooltouch@2c {
+        compatible = "hid-over-i2c";
+        reg = <0x2c>;
+        hid-descr-addr = <0x0020>;
+        interrupts-extended = GPIRQ_I2C3_J7;
+    };
+};
