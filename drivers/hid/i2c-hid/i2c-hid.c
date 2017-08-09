@@ -212,7 +212,7 @@ static int __i2c_hid_command(struct i2c_client *client,
 	ret = 0;
 
 	if (wait) {
-		i2c_hid_dbg(ihid, "%s: waiting...\n", __func__);
+		i2c_hid_dbg(ihid, "%s: waiting... flags=0x%08lx\n", __func__, ihid->flags);
 		if (!wait_event_timeout(ihid->wait,
 				!test_bit(I2C_HID_RESET_PENDING, &ihid->flags),
 				msecs_to_jiffies(5000)))
