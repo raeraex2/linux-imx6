@@ -103,6 +103,6 @@
         hid-descr-addr = <0x0020>;
         /*interrupts-extended = GPIRQ_I2C3_J7;*/
         interrupt-parent = <&gpio1>;
-        interrupts = <9 IRQ_TYPE_LEVEL_HIGH>;
+        interrupts = <9 IRQ_TYPE_LEVEL_LOW>;
     };
 };
