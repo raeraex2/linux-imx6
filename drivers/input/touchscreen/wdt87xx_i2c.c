@@ -1171,11 +1171,20 @@ static const struct i2c_device_id wdt87xx_dev_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, wdt87xx_dev_id);
 
+#ifdef CONFIG_ACPI
 static const struct acpi_device_id wdt87xx_acpi_id[] = {
 	{ "WDHT0001", 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, wdt87xx_acpi_id);
+#endif
+
+#ifdef CONFIG_OF
+static const struct of_device_id wdt87xx_of_id[] = {
+    { .compatible = "wdt87xx_i2c" },
+    {},
+};
+#endif
 
 static struct i2c_driver wdt87xx_driver = {
 	.probe		= wdt87xx_ts_probe,
@@ -1185,6 +1194,7 @@ static struct i2c_driver wdt87xx_driver = {
 		.name	= WDT87XX_NAME,
 		.pm     = &wdt87xx_pm_ops,
 		.acpi_match_table = ACPI_PTR(wdt87xx_acpi_id),
+		.of_match_table = of_match_ptr(wdt87xx_of_id),
 	},
 };
 module_i2c_driver(wdt87xx_driver);
