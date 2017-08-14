@@ -98,7 +98,7 @@
 /* hid over i2c */
 &i2c3 {
     i2c-hid-cooltouch@2c {
-        compatible = "hid-over-i2c";
+        compatible = "wdt87xx_i2c";
         reg = <0x2c>;
         hid-descr-addr = <0x0020>;
         interrupts-extended = <&gpio1 9 GPIO_ACTIVE_LOW>;
