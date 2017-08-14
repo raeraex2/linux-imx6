@@ -101,8 +101,6 @@
         compatible = "hid-over-i2c";
         reg = <0x2c>;
         hid-descr-addr = <0x0020>;
-        /*interrupts-extended = GPIRQ_I2C3_J7;*/
-        interrupt-parent = <&gpio1>;
-        interrupts = <9 IRQ_TYPE_LEVEL_LOW>;
+        interrupts-extended = <&gpio1 9 GPIO_ACTIVE_LOW>;
     };
 };
