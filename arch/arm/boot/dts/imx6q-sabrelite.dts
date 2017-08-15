@@ -97,10 +97,13 @@
 
 /* hid over i2c */
 &i2c3 {
+    clock-frequency = <400000>;
+
     i2c-hid-cooltouch@2c {
-        compatible = "wdt87xx_i2c";
+        compatible = "cts305_i2c";
         reg = <0x2c>;
         hid-descr-addr = <0x0020>;
-        interrupts-extended = <&gpio1 9 GPIO_ACTIVE_LOW>;
+        interrupts-extended = GPIRQ_I2C3_J7;
+        wakeup-gpios = GP_I2C3_J7;
     };
 };
