@@ -42,9 +42,6 @@
 #define	RPT_HYBRID_54			0x02
 #define	RPT_HID_HYBRID			0x03
 
-#define	PLT_WDT8756			0x00
-#define	PLT_WDT8752			0x01
-
 #define	RPT_ID_TOUCH			0x01
 #define	RPT_ID_PEN			0x02
 #define	RPT_ID_MOUSE			0x03
@@ -55,11 +52,11 @@
 #define MODE_SLEEP			0x04
 #define MODE_STOP			0xFF
 
-#define WDT_MAX_FINGER			10
-#define WDT_RAW_BUF_COUNT		54
-#define WDT_V1_RAW_BUF_COUNT		74
-#define	WDT_HALF_RAW_BUF_COUNT		29
-#define WDT_FIRMWARE_ID			0xa9e368f5
+#define CTS_MAX_FINGER			10
+#define CTS_RAW_BUF_COUNT		54
+#define CTS_V1_RAW_BUF_COUNT		74
+#define	CTS_HALF_RAW_BUF_COUNT		29
+#define CTS_FIRMWARE_ID			0xa9e368f5
 
 
 #define PG_SIZE				0x1000
@@ -135,7 +132,7 @@
 #define	CTL_PARAM_OFFSET_I2C_CFG	36
 
 /* The definition of the device descriptor */
-#define WDT_GD_DEVICE			1
+#define CTS_GD_DEVICE			1
 #define DEV_DESC_OFFSET_VID		8
 #define DEV_DESC_OFFSET_PID		10
 
@@ -207,21 +204,9 @@
 #define FW_CHUNK_PAYLOAD_OFFSET		32
 
 /* Controller requires minimum 300us between commands */
-#define WDT_COMMAND_DELAY_MS		2
-#define WDT_FLASH_WRITE_DELAY_MS	4
-#define WDT_FW_RESET_TIME		2500
-
-/* The definition for WDT8752 */
-#define	W8752_READ_OFFSET_MASK		0x10000
-#define W8752_DEV_INFO_READ_OFFSET	0xC
-#define	W8752_PKT_HEADER_SZ		4
-#define	W8752_PKT_SIZE			60
-
-#define W8752_MODE_SENSE		0x1
-#define	W8752_MODE_DOZE			0x2
-#define W8752_MODE_SLEEP		0x3
-/* Communication commands of WDT8752 */
-#define	W8755_FW_GET_DEV_INFO		0x73
+#define CTS_COMMAND_DELAY_MS		2
+#define CTS_FLASH_WRITE_DELAY_MS	4
+#define CTS_FW_RESET_TIME		2500
 
 #define CMD_SIZE_OFFSET			0x2
 #define CMD_ID_OFFSET			0x4
@@ -267,7 +252,7 @@ struct cts305_param {
 
 struct cts305_data;
 
-typedef	int(*LPFUNC_report_type) (struct cts305_data *wdt);
+typedef	int(*LPFUNC_report_type) (struct cts305_data *cts);
 
 struct cts305_data {
     struct i2c_client		*client;
@@ -361,7 +346,7 @@ static int cts305_i2c_xfer(struct i2c_client *client,
     else {
         ret = i2c_transfer(client->adapter, &msgs[0], 1);
         if (ret == array_sz) {
-            mdelay(WDT_COMMAND_DELAY_MS);
+            mdelay(CTS_COMMAND_DELAY_MS);
             ret = i2c_transfer(client->adapter, &msgs[1], 1);
         }
     }
@@ -380,13 +365,13 @@ static int cts305_get_desc(struct i2c_client *client, u8 desc_idx,
     u8 *buf, size_t len)
 {
     u8 tx_buf[] = { 0x22, 0x00, 0x10, 0x0E, 0x23, 0x00 };
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     int error;
 
     tx_buf[2] |= desc_idx & 0xF;
 
     error = cts305_i2c_xfer(client, tx_buf, sizeof(tx_buf)
-        + wdt->dummy_bytes, buf, len);
+        + cts->dummy_bytes, buf, len);
 
     if (error) {
         dev_err(&client->dev, "get desc failed: %d\n", error);
@@ -399,7 +384,7 @@ static int cts305_get_desc(struct i2c_client *client, u8 desc_idx,
         return -EINVAL;
     }
 
-    mdelay(WDT_COMMAND_DELAY_MS);
+    mdelay(CTS_COMMAND_DELAY_MS);
 
     return 0;
 }
@@ -409,7 +394,7 @@ static int cts305_get_string(struct i2c_client *client, u8 str_idx,
 {
     u8 tx_buf[] = { 0x22, 0x00, 0x13, 0x0E, str_idx, 0x23, 0x00 };
     u8 rx_buf[PKT_WRITE_SIZE];
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     size_t rx_len = len + 2;
     int error;
 
@@ -417,7 +402,7 @@ static int cts305_get_string(struct i2c_client *client, u8 str_idx,
         return -EINVAL;
 
     error = cts305_i2c_xfer(client, tx_buf, sizeof(tx_buf) +
-        wdt->dummy_bytes, rx_buf, rx_len);
+        cts->dummy_bytes, rx_buf, rx_len);
     if (error) {
         dev_err(&client->dev, "get string failed: %d\n", error);
         return error;
@@ -432,7 +417,7 @@ static int cts305_get_string(struct i2c_client *client, u8 str_idx,
     rx_len = min_t(size_t, len, rx_buf[0]);
     memcpy(buf, &rx_buf[2], rx_len);
 
-    mdelay(WDT_COMMAND_DELAY_MS);
+    mdelay(CTS_COMMAND_DELAY_MS);
 
     return 0;
 }
@@ -440,7 +425,7 @@ static int cts305_get_string(struct i2c_client *client, u8 str_idx,
 static int cts305_get_feature(struct i2c_client *client,
     u8 *buf, size_t buf_size)
 {
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     u8 tx_buf[PKT_TX_SIZE];
     u8 rx_buf[PKT_WRITE_SIZE];
     size_t tx_len = 0;
@@ -467,7 +452,7 @@ static int cts305_get_feature(struct i2c_client *client,
     tx_buf[tx_len++] = 0x23;
     tx_buf[tx_len++] = 0x00;
 
-    tx_len += wdt->dummy_bytes;
+    tx_len += cts->dummy_bytes;
 
     error = cts305_i2c_xfer(client, tx_buf, tx_len, rx_buf, rx_len);
     if (error) {
@@ -478,7 +463,7 @@ static int cts305_get_feature(struct i2c_client *client,
     rx_len = min_t(size_t, buf_size, get_unaligned_le16(rx_buf));
     memcpy(buf, &rx_buf[2], rx_len);
 
-    mdelay(WDT_COMMAND_DELAY_MS);
+    mdelay(CTS_COMMAND_DELAY_MS);
 
     return 0;
 }
@@ -486,7 +471,7 @@ static int cts305_get_feature(struct i2c_client *client,
 static int cts305_set_feature(struct i2c_client *client, u8 rpt_id,
     const u8 *buf, size_t buf_size)
 {
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     u8 tx_buf[PKT_WRITE_SIZE];
     int tx_len = 0;
     int error;
@@ -506,9 +491,7 @@ static int cts305_set_feature(struct i2c_client *client, u8 rpt_id,
     tx_buf[tx_len++] = 0x23;
     tx_buf[tx_len++] = 0x00;
 
-    if ((wdt->plt_id == PLT_WDT8752 &&
-        wdt->param.protocol_version >= 0x1000007) ||
-        wdt->state != ST_PROG) {
+    if (cts->state != ST_PROG) {
         tx_buf[tx_len++] = ((buf_size + 2) & 0xFF);
         tx_buf[tx_len++] = (((buf_size + 2) & 0xFF00) >> 8);
     }
@@ -529,7 +512,7 @@ static int cts305_set_feature(struct i2c_client *client, u8 rpt_id,
         return error;
     }
 
-    mdelay(WDT_COMMAND_DELAY_MS);
+    mdelay(CTS_COMMAND_DELAY_MS);
 
     return 0;
 }
@@ -575,22 +558,6 @@ static int cts305_send_command(struct i2c_client *client, int cmd, int value)
         cmd_buf, sizeof(cmd_buf));
 }
 
-static int cts305_send_short_command(struct i2c_client *client,
-    int cmd, int value)
-{
-    u8 cmd_buf[CMD_BUF_SIZE];
-
-    /* Set the command packet */
-    cmd_buf[0] = 0;
-    cmd_buf[1] = VND1_SET_COMMAND;
-    cmd_buf[2] = 0;
-    cmd_buf[3] = 0;
-    cmd_buf[4] = cmd;
-    cmd_buf[5] = value;
-
-    return cts305_set_feature(client, VND_REQ_WRITE, cmd_buf, 6);
-}
-
 static int cts305_sw_reset(struct i2c_client *client)
 {
     int error;
@@ -604,7 +571,7 @@ static int cts305_sw_reset(struct i2c_client *client)
     }
 
     /* Wait the device to be ready */
-    msleep(WDT_FW_RESET_TIME);
+    msleep(CTS_FW_RESET_TIME);
 
     return 0;
 }
@@ -628,10 +595,10 @@ static const void *cts305_get_fw_chunk(const struct firmware *fw, u32 id)
     return NULL;
 }
 
-static void cts305_parse_param(struct cts305_data *wdt, u8 *buf, int len)
+static void cts305_parse_param(struct cts305_data *cts, u8 *buf, int len)
 {
-    struct i2c_client *client = wdt->client;
-    struct cts305_param *param = &wdt->param;
+    struct i2c_client *client = cts->client;
+    struct cts305_param *param = &cts->param;
 
     param->xmls_id1 = get_unaligned_le16(buf + CTL_PARAM_OFFSET_XMLS_ID1);
     param->xmls_id2 = get_unaligned_le16(buf + CTL_PARAM_OFFSET_XMLS_ID2);
@@ -647,11 +614,11 @@ static void cts305_parse_param(struct cts305_data *wdt, u8 *buf, int len)
         param->i2c_cfg = get_unaligned_le16(buf +
             CTL_PARAM_OFFSET_I2C_CFG);
 
-    dev_info(&client->dev, "dm_bt: 0x%x, len: %d\n", wdt->dummy_bytes, len);
+    dev_info(&client->dev, "dm_bt: 0x%x, len: %d\n", cts->dummy_bytes, len);
 
-    wdt->report_type = param->i2c_cfg & 0xF;
-    if (wdt->report_type > RPT_HID_HYBRID)
-        wdt->report_type = RPT_PARALLEL_74;
+    cts->report_type = param->i2c_cfg & 0xF;
+    if (cts->report_type > RPT_HID_HYBRID)
+        cts->report_type = RPT_PARALLEL_74;
 
     /* Get the scaling factor of pixel to logical coordinate */
     param->scaling_factor =
@@ -662,106 +629,14 @@ static void cts305_parse_param(struct cts305_data *wdt, u8 *buf, int len)
         param->phy_w);
 }
 
-static int wdt8752_exec_read_pkt(struct i2c_client *client, u8 type,
-    u8 *data, size_t len, int offset)
-{
-    u8 pkt_buf[PKT_BUF_SIZE];
-    int error;
-    size_t size;
-
-    /*
-    * Some vendor commands can read the data structure from controller,
-    * set the mask to indicate the offset.
-    */
-    if (offset & W8752_READ_OFFSET_MASK)
-        size = offset & 0xFF;
-    else
-        size = len;
-
-    pkt_buf[CMD_REPORT_ID_OFFSET] = VND_REQ_READ;
-    pkt_buf[CMD_TYPE_OFFSET] = type;
-    put_unaligned_le16(size, &pkt_buf[CMD_SIZE_OFFSET]);
-
-    error = cts305_set_feature(client, VND_REQ_READ, pkt_buf,
-        W8752_PKT_HEADER_SZ);
-    if (error)
-        return error;
-
-    pkt_buf[CMD_REPORT_ID_OFFSET] = VND_READ_DATA;
-    pkt_buf[CMD_TYPE_OFFSET] = type;
-    error = cts305_get_feature(client, pkt_buf, PKT_BUF_SIZE);
-    if (error)
-        return error;
-
-    if (pkt_buf[CMD_REPORT_ID_OFFSET] != VND_READ_DATA) {
-        dev_err(&client->dev, "wrong id of fw response: 0x%x\n",
-            pkt_buf[CMD_REPORT_ID_OFFSET]);
-        return -EINVAL;
-    }
-    memcpy(data, &pkt_buf[CMD_DATA1_OFFSET], len);
-
-    return 0;
-}
-
-static int wdt8752_dev_get_device_info(struct i2c_client *client, u8 *buf,
-    int size)
-{
-    return wdt8752_exec_read_pkt(client, W8755_FW_GET_DEV_INFO, buf,
-        size, W8752_READ_OFFSET_MASK);
-}
-
-static int cts305_get_param_hid(struct cts305_data *wdt)
-{
-    u8 buf[PKT_READ_SIZE];
-    u8 in_buf[8] = { 0x06, 0xA2, 0x10, 0, 0, 0, 0, 0 };
-    int error;
-    struct i2c_client *client = wdt->client;
-    struct cts305_param *param = &wdt->param;
-
-    buf[0] = 0x20;
-    buf[1] = 0x00;
-
-    error = cts305_i2c_xfer(client, buf, 2, &wdt->hid_desc,
-        sizeof(wdt->hid_desc));
-    if (error < 0) {
-        dev_err(&client->dev, "failed to get hid desc\n");
-        return error;
-    }
-
-    param->vendor_id = wdt->hid_desc.wVendorID;
-    param->product_id = wdt->hid_desc.wProductID;
-
-    error = wdt8752_dev_get_device_info(client, buf, 32);
-    if (error < 0) {
-        dev_err(&client->dev, "failed to get device info\n");
-        return error;
-    }
-
-    param->protocol_version = get_unaligned_le32(&buf[0]);
-
-    error = cts305_set_feature(client, VND_REQ_WRITE, in_buf, 8);
-    if (error < 0)
-        return error;
-
-    buf[0] = 0x07;
-    error = cts305_get_feature(client, buf, 24);
-    if (error < 0 || (buf[0] != 0x07))
-        return error;
-
-    wdt->dev_status = buf[4] | (buf[5] << 8) | (buf[6] << 16) |
-        (buf[11] << 24);
-
-    return 0;
-}
-
-static int cts305_get_param_private(struct cts305_data *wdt)
+static int cts305_get_param_private(struct cts305_data *cts)
 {
     u8 buf[PKT_READ_SIZE];
     int error, str_len;
-    struct i2c_client *client = wdt->client;
-    struct cts305_param *param = &wdt->param;
+    struct i2c_client *client = cts->client;
+    struct cts305_param *param = &cts->param;
 
-    error = cts305_get_desc(client, WDT_GD_DEVICE, buf, 18);
+    error = cts305_get_desc(client, CTS_GD_DEVICE, buf, 18);
     if (error < 0) {
         dev_err(&client->dev, "failed to get device desc\n");
         return error;
@@ -776,7 +651,7 @@ static int cts305_get_param_private(struct cts305_data *wdt)
         return str_len;
     }
 
-    cts305_parse_param(wdt, buf, str_len);
+    cts305_parse_param(cts, buf, str_len);
 
     error = cts305_get_string(client, STRIDX_PLATFORM_ID, buf, 8);
     if (error < 0) {
@@ -789,14 +664,14 @@ static int cts305_get_param_private(struct cts305_data *wdt)
     return 0;
 }
 
-static int cts305_get_param(struct cts305_data *wdt)
+static int cts305_get_param(struct cts305_data *cts)
 {
     u8 buf[PKT_READ_SIZE];
     int error;
-    struct i2c_client *client = wdt->client;
-    struct cts305_param *param = &wdt->param;
+    struct i2c_client *client = cts->client;
+    struct cts305_param *param = &cts->param;
 
-    wdt->dummy_bytes = 0;
+    cts->dummy_bytes = 0;
     buf[0] = 0xf4;
     error = cts305_get_feature(client, buf, 56);
     if (error)
@@ -806,17 +681,9 @@ static int cts305_get_param(struct cts305_data *wdt)
             dev_err(&client->dev, "wrong id of fw response: 0x%x\n",
                 buf[0]);
         else
-            wdt->dummy_bytes = buf[1];
+            cts->dummy_bytes = buf[1];
 
-    if (buf[0] == 0xf4 && (get_unaligned_le16(buf + 2) == 0x154f)) {
-        param->plat_id = buf[5];
-        cts305_parse_param(wdt, &buf[10],
-            get_unaligned_le16(buf + 12));
-        wdt->plt_id = PLT_WDT8752;
-        error = cts305_get_param_hid(wdt);
-    }
-    else
-        error = cts305_get_param_private(wdt);
+    error = cts305_get_param_private(cts);
 
     if (error < 0)
         return error;
@@ -844,7 +711,7 @@ static int cts305_get_param(struct cts305_data *wdt)
     dev_info(&client->dev,
         "pid: %04x, vid: %04x, w: %d, h: %d, i_sz: %d, sts: 0x%x\n",
         param->vendor_id, param->product_id, param->phy_w,
-        param->phy_h, wdt->hid_desc.wMaxInputLength, wdt->dev_status);
+        param->phy_h, cts->hid_desc.wMaxInputLength, cts->dev_status);
 
     dev_info(&client->dev,
         "protocol_ver: 0x%08x, n_touch_pkt: %d, n_bytes_touch: %d\n",
@@ -853,7 +720,7 @@ static int cts305_get_param(struct cts305_data *wdt)
     return 0;
 }
 
-static int cts305_validate_firmware(struct cts305_data *wdt,
+static int cts305_validate_firmware(struct cts305_data *cts,
     const struct firmware *fw)
 {
     const void *fw_chunk;
@@ -865,13 +732,13 @@ static int cts305_validate_firmware(struct cts305_data *wdt,
     data1 = get_unaligned_le32(fw->data + FW_FOURCC1_OFFSET);
     data2 = get_unaligned_le32(fw->data + FW_FOURCC2_OFFSET);
     if (data1 != FOURCC_ID_RIFF || data2 != FOURCC_ID_WHIF) {
-        dev_err(&wdt->client->dev, "check fw tag failed\n");
+        dev_err(&cts->client->dev, "check fw tag failed\n");
         return -EINVAL;
     }
 
     size = get_unaligned_le32(fw->data + FW_SIZE_OFFSET);
     if (size != fw->size) {
-        dev_err(&wdt->client->dev,
+        dev_err(&cts->client->dev,
             "fw size mismatch: expected %d, actual %zu\n",
             size, fw->size);
         return -EINVAL;
@@ -883,17 +750,17 @@ static int cts305_validate_firmware(struct cts305_data *wdt,
     */
     fw_chunk = cts305_get_fw_chunk(fw, CHUNK_ID_FRWR);
     if (!fw_chunk) {
-        dev_err(&wdt->client->dev,
+        dev_err(&cts->client->dev,
             "unable to locate firmware chunk\n");
         return -EINVAL;
     }
 
     fw_chip_id = (get_unaligned_le32(fw_chunk +
         FW_CHUNK_VERSION_OFFSET) >> 12) & 0xF;
-    chip_id = (wdt->param.fw_id >> 12) & 0xF;
+    chip_id = (cts->param.fw_id >> 12) & 0xF;
 
     if (fw_chip_id != chip_id) {
-        dev_err(&wdt->client->dev,
+        dev_err(&cts->client->dev,
             "fw version mismatch: fw %d vs. chip %d\n",
             fw_chip_id, chip_id);
         return -ENODEV;
@@ -908,7 +775,7 @@ static int cts305_validate_fw_chunk(const void *data, int id)
         u32 fw_id;
 
         fw_id = get_unaligned_le32(data + FW_CHUNK_PAYLOAD_OFFSET);
-        if (fw_id != WDT_FIRMWARE_ID)
+        if (fw_id != CTS_FIRMWARE_ID)
             return -EINVAL;
     }
 
@@ -950,7 +817,7 @@ static int cts305_write_data(struct i2c_client *client, const char *data,
         address += packet_size;
 
         /* Wait for the controller to finish the write */
-        mdelay(WDT_FLASH_WRITE_DELAY_MS);
+        mdelay(CTS_FLASH_WRITE_DELAY_MS);
 
         if ((++count % 32) == 0) {
             /* Delay for fw to clear watch dog */
@@ -1174,14 +1041,14 @@ static int cts305_do_update_firmware(struct i2c_client *client,
     const struct firmware *fw,
     unsigned int chunk_id)
 {
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     int error;
 
-    error = cts305_validate_firmware(wdt, fw);
+    error = cts305_validate_firmware(cts, fw);
     if (error)
         return error;
 
-    error = mutex_lock_interruptible(&wdt->fw_mutex);
+    error = mutex_lock_interruptible(&cts->fw_mutex);
     if (error)
         return error;
 
@@ -1202,13 +1069,13 @@ static int cts305_do_update_firmware(struct i2c_client *client,
     }
 
     /* Refresh the parameters */
-    error = cts305_get_param(wdt);
+    error = cts305_get_param(cts);
     if (error)
         dev_err(&client->dev,
             "failed to refresh system paramaters: %d\n", error);
 out:
     enable_irq(client->irq);
-    mutex_unlock(&wdt->fw_mutex);
+    mutex_unlock(&cts->fw_mutex);
 
     return error ? error : 0;
 }
@@ -1238,11 +1105,11 @@ static ssize_t config_csum_show(struct device *dev,
     struct device_attribute *attr, char *buf)
 {
     struct i2c_client *client = to_i2c_client(dev);
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     u32 cfg_csum;
 
-    cfg_csum = wdt->param.xmls_id1;
-    cfg_csum = (cfg_csum << 16) | wdt->param.xmls_id2;
+    cfg_csum = cts->param.xmls_id1;
+    cfg_csum = (cfg_csum << 16) | cts->param.xmls_id2;
 
     return scnprintf(buf, PAGE_SIZE, "%x\n", cfg_csum);
 }
@@ -1251,18 +1118,18 @@ static ssize_t fw_version_show(struct device *dev,
     struct device_attribute *attr, char *buf)
 {
     struct i2c_client *client = to_i2c_client(dev);
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
 
-    return scnprintf(buf, PAGE_SIZE, "%x\n", wdt->param.fw_id);
+    return scnprintf(buf, PAGE_SIZE, "%x\n", cts->param.fw_id);
 }
 
 static ssize_t plat_id_show(struct device *dev,
     struct device_attribute *attr, char *buf)
 {
     struct i2c_client *client = to_i2c_client(dev);
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
 
-    return scnprintf(buf, PAGE_SIZE, "%x\n", wdt->param.plat_id);
+    return scnprintf(buf, PAGE_SIZE, "%x\n", cts->param.plat_id);
 }
 
 static ssize_t update_config_store(struct device *dev,
@@ -1306,11 +1173,11 @@ static const struct attribute_group wdt87xx_attr_group = {
     .attrs = cts305_attrs,
 };
 
-static void cts305_report_contact(struct cts305_data *wdt,
+static void cts305_report_contact(struct cts305_data *cts,
     struct cts305_param *param,
     u8 *buf)
 {
-    struct input_dev *input = wdt->input_mt;
+    struct input_dev *input = cts->input_mt;
     int fngr_id;
     u32 x, y;
 
@@ -1319,7 +1186,7 @@ static void cts305_report_contact(struct cts305_data *wdt,
         return;
 
     if (!(buf[FINGER_EV_V1_OFFSET_ID] & 0x1)) {
-        wdt->fngr_state &= ~(0x1 << fngr_id);
+        cts->fngr_state &= ~(0x1 << fngr_id);
         return;
     }
 
@@ -1332,21 +1199,21 @@ static void cts305_report_contact(struct cts305_data *wdt,
     if (x > param->max_x || y > param->max_y)
         return;
 
-    dev_dbg(&wdt->client->dev, "tip on (%d), x(%d), y(%d)\n",
+    dev_dbg(&cts->client->dev, "tip on (%d), x(%d), y(%d)\n",
         fngr_id, x, y);
 
     input_mt_slot(input, fngr_id);
     input_mt_report_slot_state(input, MT_TOOL_FINGER, 1);
     input_report_abs(input, ABS_MT_POSITION_X, x);
     input_report_abs(input, ABS_MT_POSITION_Y, y);
-    wdt->fngr_state |= (0x1 << fngr_id);
+    cts->fngr_state |= (0x1 << fngr_id);
 }
 
-static void cts305_report_contact_v1(struct cts305_data *wdt,
+static void cts305_report_contact_v1(struct cts305_data *cts,
     struct cts305_param *param,
     u8 *buf)
 {
-    struct input_dev *input = wdt->input_mt;
+    struct input_dev *input = cts->input_mt;
     int fngr_id;
     u32 x, y, w;
     u8 p;
@@ -1356,7 +1223,7 @@ static void cts305_report_contact_v1(struct cts305_data *wdt,
         return;
 
     if (!(buf[FINGER_EV_V1_OFFSET_ID] & 0x1)) {
-        wdt->fngr_state &= ~(0x1 << fngr_id);
+        cts->fngr_state &= ~(0x1 << fngr_id);
         return;
     }
 
@@ -1374,7 +1241,7 @@ static void cts305_report_contact_v1(struct cts305_data *wdt,
     if (x > param->max_x || y > param->max_y)
         return;
 
-    dev_dbg(&wdt->client->dev, "tip on (%d), x(%d), y(%d)\n",
+    dev_dbg(&cts->client->dev, "tip on (%d), x(%d), y(%d)\n",
         fngr_id, x, y);
 
     input_mt_slot(input, fngr_id);
@@ -1384,13 +1251,13 @@ static void cts305_report_contact_v1(struct cts305_data *wdt,
     input_report_abs(input, ABS_MT_PRESSURE, p);
     input_report_abs(input, ABS_MT_POSITION_X, x);
     input_report_abs(input, ABS_MT_POSITION_Y, y);
-    wdt->fngr_state |= (0x1 << fngr_id);
+    cts->fngr_state |= (0x1 << fngr_id);
 }
 
-static int cts305_report_pen(struct cts305_data *wdt,
+static int cts305_report_pen(struct cts305_data *cts,
     struct cts305_param *param, u8 *buf)
 {
-    struct input_dev *input = wdt->input_pen;
+    struct input_dev *input = cts->input_pen;
     u32 x, y;
     u16 p;
     u8 tip, barrel, invt, eraser, in_rng, rubber;
@@ -1411,9 +1278,9 @@ static int cts305_report_pen(struct cts305_data *wdt,
     if (x > param->max_x || y > param->max_y)
         return 0;
 
-    dev_info(&wdt->client->dev, "buf %x %x %x\n", buf[1], buf[2], buf[3]);
+    dev_info(&cts->client->dev, "buf %x %x %x\n", buf[1], buf[2], buf[3]);
 
-    if (wdt->pen_type == BTN_TOOL_RUBBER && !rubber) {
+    if (cts->pen_type == BTN_TOOL_RUBBER && !rubber) {
         input_report_key(input, BTN_TOUCH, 0);
         input_report_key(input, BTN_STYLUS, 0);
         input_report_key(input, BTN_STYLUS2, 0);
@@ -1423,11 +1290,11 @@ static int cts305_report_pen(struct cts305_data *wdt,
     }
 
     if (rubber)
-        wdt->pen_type = BTN_TOOL_RUBBER;
+        cts->pen_type = BTN_TOOL_RUBBER;
     else
-        wdt->pen_type = BTN_TOOL_PEN;
+        cts->pen_type = BTN_TOOL_PEN;
 
-    input_report_key(input, wdt->pen_type, in_rng);
+    input_report_key(input, cts->pen_type, in_rng);
     if (in_rng) {
         input_report_key(input, BTN_TOUCH, tip);
         input_report_key(input, BTN_STYLUS, barrel);
@@ -1442,10 +1309,10 @@ static int cts305_report_pen(struct cts305_data *wdt,
     return 0;
 }
 
-static int cts305_report_mouse(struct cts305_data *wdt,
+static int cts305_report_mouse(struct cts305_data *cts,
     struct cts305_param *param, u8 *buf)
 {
-    struct input_dev *input = wdt->input_mouse;
+    struct input_dev *input = cts->input_mouse;
     u32 x, y;
     u8	btn_left, btn_right;
 
@@ -1460,11 +1327,11 @@ static int cts305_report_mouse(struct cts305_data *wdt,
     if (x > param->max_x || y > param->max_y)
         return 0;
 
-    if (btn_left != (wdt->btn_state & 0x1))
+    if (btn_left != (cts->btn_state & 0x1))
         input_event(input, EV_MSC, MSC_SCAN, 0x90001);
     input_report_key(input, BTN_LEFT, btn_left);
 
-    if (btn_right != (wdt->btn_state & 0x2))
+    if (btn_right != (cts->btn_state & 0x2))
         input_event(input, EV_MSC, MSC_SCAN, 0x90002);
     input_report_key(input, BTN_RIGHT, btn_right);
 
@@ -1473,20 +1340,20 @@ static int cts305_report_mouse(struct cts305_data *wdt,
 
     input_sync(input);
 
-    wdt->btn_state = buf[MOUSE_EV_OFFSET_BTN] & 0x3;
+    cts->btn_state = buf[MOUSE_EV_OFFSET_BTN] & 0x3;
 
     return 0;
 }
 
-static int cts305_report_hid_hybrid(struct cts305_data *wdt)
+static int cts305_report_hid_hybrid(struct cts305_data *cts)
 {
-    struct i2c_client *client = wdt->client;
+    struct i2c_client *client = cts->client;
     int i, fngrs, pkt_size;
     int error;
-    u8 raw_buf[WDT_V1_RAW_BUF_COUNT + 2] = { 0 };
+    u8 raw_buf[CTS_V1_RAW_BUF_COUNT + 2] = { 0 };
 
     error = cts305_i2c_rx(client, raw_buf,
-        wdt->hid_desc.wMaxInputLength);
+        cts->hid_desc.wMaxInputLength);
     pkt_size = get_unaligned_le16(raw_buf);
     if (error < 0 || !pkt_size) {
         dev_err(&client->dev, "read hid raw failed: (%d)\n", error);
@@ -1495,67 +1362,67 @@ static int cts305_report_hid_hybrid(struct cts305_data *wdt)
 
     if (raw_buf[2] == RPT_ID_PEN)
         if (pkt_size == PKT_PEN_SIZE)
-            return cts305_report_pen(wdt, &wdt->param, &raw_buf[2]);
+            return cts305_report_pen(cts, &cts->param, &raw_buf[2]);
         else
             goto header_failed;
-    else if (raw_buf[2] == RPT_ID_MOUSE && (wdt->dev_status & 0x300))
+    else if (raw_buf[2] == RPT_ID_MOUSE && (cts->dev_status & 0x300))
         if (pkt_size == PKT_MOUSE_SIZE)
-            return cts305_report_mouse(wdt, &wdt->param, &raw_buf[2]);
+            return cts305_report_mouse(cts, &cts->param, &raw_buf[2]);
         else
             goto header_failed;
     else if (raw_buf[2] == RPT_ID_TOUCH) {
-        if (pkt_size != wdt->hid_desc.wMaxInputLength)
+        if (pkt_size != cts->hid_desc.wMaxInputLength)
             goto header_failed;
 
         fngrs = raw_buf[pkt_size - 1];
 
-        if (fngrs > WDT_MAX_FINGER) {
+        if (fngrs > CTS_MAX_FINGER) {
             dev_err(&client->dev, "exceed max fngrs: (%d)\n", fngrs);
             goto failed;
         }
 
-        if (fngrs && wdt->fngr_left) {
+        if (fngrs && cts->fngr_left) {
             dev_err(&client->dev, "wrong fngrs: (%d), (%d)\n",
-                fngrs, wdt->fngr_left);
+                fngrs, cts->fngr_left);
             goto failed;
         }
 
-        wdt->rpt_scantime = get_unaligned_le16(&raw_buf[pkt_size - 3]);
+        cts->rpt_scantime = get_unaligned_le16(&raw_buf[pkt_size - 3]);
 
-        if (!fngrs && !wdt->fngr_left)
+        if (!fngrs && !cts->fngr_left)
             goto failed;
 
         if (!fngrs)
-            fngrs = wdt->fngr_left;
+            fngrs = cts->fngr_left;
         else
-            wdt->rpt_scantime |= (fngrs << 16);
+            cts->rpt_scantime |= (fngrs << 16);
 
-        if (fngrs > wdt->param.n_tch_pkt) {
-            wdt->fngr_left = fngrs - wdt->param.n_tch_pkt;
-            fngrs = wdt->param.n_tch_pkt;
+        if (fngrs > cts->param.n_tch_pkt) {
+            cts->fngr_left = fngrs - cts->param.n_tch_pkt;
+            fngrs = cts->param.n_tch_pkt;
         }
         else
-            wdt->fngr_left = 0;
+            cts->fngr_left = 0;
 
-        if (wdt->param.n_bt_tch == 7) {
+        if (cts->param.n_bt_tch == 7) {
             for (i = 0; i < fngrs; i++)
-                cts305_report_contact_v1(wdt, &wdt->param,
+                cts305_report_contact_v1(cts, &cts->param,
                     &raw_buf[2 +
                     TOUCH_PK_HALF_OFFSET_EVENT +
                     i * FINGER_EV_V1_SIZE]);
         }
         else {
             for (i = 0; i < fngrs; i++)
-                cts305_report_contact(wdt, &wdt->param,
+                cts305_report_contact(cts, &cts->param,
                     &raw_buf[2 +
                     TOUCH_PK_HALF_OFFSET_EVENT +
                     i * FINGER_EV_SIZE]);
         }
 
-        if (!wdt->fngr_state && !wdt->fngr_left)
-            wdt->rpt_scantime &= 0xFFFF;
+        if (!cts->fngr_state && !cts->fngr_left)
+            cts->rpt_scantime &= 0xFFFF;
 
-        if (wdt->fngr_left)
+        if (cts->fngr_left)
             return 0;
     }
     else
@@ -1566,21 +1433,21 @@ static int cts305_report_hid_hybrid(struct cts305_data *wdt)
 header_failed:
     dev_err(&client->dev, "rpt_id (%d) pkt size (%d)\n", raw_buf[2], pkt_size);
 failed:
-    wdt->fngr_left = 0;
+    cts->fngr_left = 0;
     fngrs = 0;
-    wdt->rpt_scantime &= 0xFFFF;
+    cts->rpt_scantime &= 0xFFFF;
     return 0;
 }
 
-static int cts305_report_hybrid_54(struct cts305_data *wdt)
+static int cts305_report_hybrid_54(struct cts305_data *cts)
 {
-    struct i2c_client *client = wdt->client;
+    struct i2c_client *client = cts->client;
     int i, fngrs;
     int error;
-    u8 raw_buf[WDT_V1_RAW_BUF_COUNT] = { 0 };
+    u8 raw_buf[CTS_V1_RAW_BUF_COUNT] = { 0 };
 
     error = cts305_i2c_rx(client, raw_buf,
-        WDT_HALF_RAW_BUF_COUNT);
+        CTS_HALF_RAW_BUF_COUNT);
     if (error < 0) {
         dev_err(&client->dev, "read top half raw data failed: %d\n",
             error);
@@ -1592,8 +1459,8 @@ static int cts305_report_hybrid_54(struct cts305_data *wdt)
     if (fngrs > 5) {
         udelay(100);
         error = cts305_i2c_rx(client,
-            &raw_buf[WDT_HALF_RAW_BUF_COUNT],
-            WDT_HALF_RAW_BUF_COUNT);
+            &raw_buf[CTS_HALF_RAW_BUF_COUNT],
+            CTS_HALF_RAW_BUF_COUNT);
         if (error < 0) {
             dev_err(&client->dev, "read bottom half failed: %d\n",
                 error);
@@ -1602,36 +1469,36 @@ static int cts305_report_hybrid_54(struct cts305_data *wdt)
     }
 
     if (!fngrs) {
-        for (i = 0; i < WDT_MAX_FINGER; i++) {
-            input_mt_slot(wdt->input_mt, i);
-            input_mt_report_slot_state(wdt->input_mt, MT_TOOL_FINGER,
+        for (i = 0; i < CTS_MAX_FINGER; i++) {
+            input_mt_slot(cts->input_mt, i);
+            input_mt_report_slot_state(cts->input_mt, MT_TOOL_FINGER,
                 0);
         }
         return 0;
     }
 
     for (i = 0; i < 5; i++)
-        cts305_report_contact(wdt, &wdt->param,
+        cts305_report_contact(cts, &cts->param,
             &raw_buf[TOUCH_PK_HALF_OFFSET_EVENT +
             i * FINGER_EV_SIZE]);
 
     if (fngrs > 5)
         for (i = 0; i < 5; i++)
-            cts305_report_contact(wdt, &wdt->param,
-                &raw_buf[WDT_HALF_RAW_BUF_COUNT +
+            cts305_report_contact(cts, &cts->param,
+                &raw_buf[CTS_HALF_RAW_BUF_COUNT +
                 TOUCH_PK_HALF_OFFSET_EVENT +
                 i * FINGER_EV_SIZE]);
     return 1;
 }
 
-static int cts305_report_parallel_74(struct cts305_data *wdt)
+static int cts305_report_parallel_74(struct cts305_data *cts)
 {
-    struct i2c_client *client = wdt->client;
+    struct i2c_client *client = cts->client;
     int i, fngrs;
     int error;
-    u8 raw_buf[WDT_V1_RAW_BUF_COUNT] = { 0 };
+    u8 raw_buf[CTS_V1_RAW_BUF_COUNT] = { 0 };
 
-    error = cts305_i2c_rx(client, raw_buf, WDT_V1_RAW_BUF_COUNT);
+    error = cts305_i2c_rx(client, raw_buf, CTS_V1_RAW_BUF_COUNT);
 
     if (error < 0) {
         dev_err(&client->dev, "read v1 raw data failed: %d\n", error);
@@ -1640,25 +1507,25 @@ static int cts305_report_parallel_74(struct cts305_data *wdt)
 
     fngrs = raw_buf[TOUCH_PK_V1_OFFSET_FNGR_NUM];
     if (!fngrs) {
-        wdt->fngr_state = 0;
+        cts->fngr_state = 0;
         return 0;
     }
 
-    for (i = 0; i < WDT_MAX_FINGER; i++)
-        cts305_report_contact_v1(wdt, &wdt->param,
+    for (i = 0; i < CTS_MAX_FINGER; i++)
+        cts305_report_contact_v1(cts, &cts->param,
             &raw_buf[TOUCH_PK_V1_OFFSET_EVENT +
             i * FINGER_EV_V1_SIZE]);
     return 1;
 }
 
-static int cts305_report_parallel_54(struct cts305_data *wdt)
+static int cts305_report_parallel_54(struct cts305_data *cts)
 {
-    struct i2c_client *client = wdt->client;
+    struct i2c_client *client = cts->client;
     int i, fngrs;
     int error;
-    u8 raw_buf[WDT_RAW_BUF_COUNT] = { 0 };
+    u8 raw_buf[CTS_RAW_BUF_COUNT] = { 0 };
 
-    error = cts305_i2c_rx(client, raw_buf, WDT_RAW_BUF_COUNT);
+    error = cts305_i2c_rx(client, raw_buf, CTS_RAW_BUF_COUNT);
     if (error < 0) {
         dev_err(&client->dev, "read raw data failed: %d\n", error);
         return 0;
@@ -1666,12 +1533,12 @@ static int cts305_report_parallel_54(struct cts305_data *wdt)
 
     fngrs = raw_buf[TOUCH_PK_OFFSET_FNGR_NUM];
     if (!fngrs) {
-        wdt->fngr_state = 0;
+        cts->fngr_state = 0;
         return 0;
     }
 
-    for (i = 0; i < WDT_MAX_FINGER; i++)
-        cts305_report_contact(wdt, &wdt->param,
+    for (i = 0; i < CTS_MAX_FINGER; i++)
+        cts305_report_contact(cts, &cts->param,
             &raw_buf[TOUCH_PK_OFFSET_EVENT +
             i * FINGER_EV_SIZE]);
     return 1;
@@ -1679,21 +1546,21 @@ static int cts305_report_parallel_54(struct cts305_data *wdt)
 
 static irqreturn_t cts305_ts_interrupt(int irq, void *dev_id)
 {
-    struct cts305_data *wdt = dev_id;
+    struct cts305_data *cts = dev_id;
 
-    if (wdt->func_report_type[(wdt->report_type & 0xf)](wdt)) {
-        input_mt_sync_frame(wdt->input_mt);
-        input_sync(wdt->input_mt);
+    if (cts->func_report_type[(cts->report_type & 0xf)](cts)) {
+        input_mt_sync_frame(cts->input_mt);
+        input_sync(cts->input_mt);
     }
 
     return IRQ_HANDLED;
 }
 
-static int cts305_ts_create_input_device_mt(struct cts305_data *wdt)
+static int cts305_ts_create_input_device_mt(struct cts305_data *cts)
 {
-    struct device *dev = &wdt->client->dev;
+    struct device *dev = &cts->client->dev;
     struct input_dev *input;
-    unsigned int res = DIV_ROUND_CLOSEST(MAX_UNIT_AXIS, wdt->param.phy_w);
+    unsigned int res = DIV_ROUND_CLOSEST(MAX_UNIT_AXIS, cts->param.phy_w);
     int error;
 
     input = devm_input_allocate_device(dev);
@@ -1701,30 +1568,30 @@ static int cts305_ts_create_input_device_mt(struct cts305_data *wdt)
         dev_err(dev, "failed to allocate input device\n");
         return -ENOMEM;
     }
-    wdt->input_mt = input;
+    cts->input_mt = input;
 
     input->name = "CTS305 Touchscreen";
     input->id.bustype = BUS_I2C;
-    input->id.vendor = wdt->param.vendor_id;
-    input->id.product = wdt->param.product_id;
-    input->phys = wdt->phys;
+    input->id.vendor = cts->param.vendor_id;
+    input->id.product = cts->param.product_id;
+    input->phys = cts->phys;
 
     __set_bit(EV_ABS, input->evbit);
 
     input_set_abs_params(input, ABS_MT_POSITION_X, 0,
-        wdt->param.max_x, 0, 0);
+        cts->param.max_x, 0, 0);
     input_set_abs_params(input, ABS_MT_POSITION_Y, 0,
-        wdt->param.max_y, 0, 0);
+        cts->param.max_y, 0, 0);
     input_abs_set_res(input, ABS_MT_POSITION_X, res);
     input_abs_set_res(input, ABS_MT_POSITION_Y, res);
 
-    if (wdt->report_type == RPT_PARALLEL_74 || wdt->param.n_bt_tch == 7) {
+    if (cts->report_type == RPT_PARALLEL_74 || cts->param.n_bt_tch == 7) {
         input_set_abs_params(input, ABS_MT_TOUCH_MAJOR,
-            0, wdt->param.max_x, 0, 0);
+            0, cts->param.max_x, 0, 0);
         input_set_abs_params(input, ABS_MT_PRESSURE, 0, 0xFF, 0, 0);
     }
 
-    input_mt_init_slots(input, WDT_MAX_FINGER,
+    input_mt_init_slots(input, CTS_MAX_FINGER,
         INPUT_MT_DIRECT | INPUT_MT_DROP_UNUSED);
     error = input_register_device(input);
     if (error) {
@@ -1735,94 +1602,12 @@ static int cts305_ts_create_input_device_mt(struct cts305_data *wdt)
     return 0;
 }
 
-static int cts305_ts_create_input_device_pen(struct cts305_data *wdt)
+static int cts305_mt_release_contacts(struct cts305_data *cts)
 {
-    struct device *dev = &wdt->client->dev;
-    struct input_dev *input;
-    unsigned int res = DIV_ROUND_CLOSEST(MAX_UNIT_AXIS, wdt->param.phy_w);
-    int error;
-
-    input = devm_input_allocate_device(dev);
-    if (!input) {
-        dev_err(dev, "failed to allocate input device\n");
-        return -ENOMEM;
-    }
-    wdt->input_pen = input;
-
-    input->name = "WDT87xx Pen";
-    input->id.bustype = BUS_I2C;
-    input->id.vendor = wdt->param.vendor_id;
-    input->id.product = wdt->param.product_id;
-    input->phys = wdt->phys;
-
-    __set_bit(EV_ABS, input->evbit);
-    __set_bit(EV_KEY, input->evbit);
-    __set_bit(BTN_TOUCH, input->keybit);
-    __set_bit(BTN_TOOL_PEN, input->keybit);
-    __set_bit(BTN_TOOL_RUBBER, input->keybit);
-    __set_bit(BTN_STYLUS, input->keybit);
-    __set_bit(BTN_STYLUS2, input->keybit);
-
-    input_set_abs_params(input, ABS_X, 0, wdt->param.max_x, 0, 0);
-    input_set_abs_params(input, ABS_Y, 0, wdt->param.max_y, 0, 0);
-    input_abs_set_res(input, ABS_X, res);
-    input_abs_set_res(input, ABS_Y, res);
-    input_set_abs_params(input, ABS_PRESSURE, 0, 0x3FF, 0, 0);
-
-    error = input_register_device(input);
-    if (error) {
-        dev_err(dev, "failed to register input pen: %d\n", error);
-        return error;
-    }
-
-    return 0;
-}
-
-static int cts305_ts_create_input_device_mouse(struct cts305_data *wdt)
-{
-    struct device *dev = &wdt->client->dev;
-    struct input_dev *input;
-    unsigned int res = DIV_ROUND_CLOSEST(MAX_UNIT_AXIS, wdt->param.phy_w);
-    int error;
-
-    input = devm_input_allocate_device(dev);
-    if (!input) {
-        dev_err(dev, "failed to allocate input device\n");
-        return -ENOMEM;
-    }
-    wdt->input_mouse = input;
-
-    input->name = "WDT87xx Mouse";
-    input->id.bustype = BUS_I2C;
-    input->id.vendor = wdt->param.vendor_id;
-    input->id.product = wdt->param.product_id;
-    input->phys = wdt->phys;
-
-    __set_bit(EV_ABS, input->evbit);
-    input_set_abs_params(input, ABS_X, 0, wdt->param.max_x, 0, 0);
-    input_set_abs_params(input, ABS_Y, 0, wdt->param.max_y, 0, 0);
-    input_abs_set_res(input, ABS_X, res);
-    input_abs_set_res(input, ABS_Y, res);
-
-    input_set_capability(input, EV_KEY, BTN_LEFT);
-    input_set_capability(input, EV_KEY, BTN_RIGHT);
-    input_set_capability(input, EV_MSC, MSC_SCAN);
-
-    error = input_register_device(input);
-    if (error) {
-        dev_err(dev, "failed to register input mouse: %d\n", error);
-        return error;
-    }
-
-    return 0;
-}
-
-static int cts305_mt_release_contacts(struct cts305_data *wdt)
-{
-    struct input_dev *input = wdt->input_mt;
+    struct input_dev *input = cts->input_mt;
     int i;
 
-    for (i = 0; i < WDT_MAX_FINGER; i++) {
+    for (i = 0; i < CTS_MAX_FINGER; i++) {
         input_mt_slot(input, i);
         input_mt_report_slot_state(input, MT_TOOL_FINGER, 0);
     }
@@ -1836,8 +1621,7 @@ static int cts305_mt_release_contacts(struct cts305_data *wdt)
 static int __maybe_unused cts305_suspend(struct device *dev)
 {
     struct i2c_client *client = to_i2c_client(dev);
-    struct cts305_data *wdt = i2c_get_clientdata(client);
-    int w8752_mode = W8752_MODE_DOZE;
+    struct cts305_data *cts = i2c_get_clientdata(client);
     int error;
 
     disable_irq(client->irq);
@@ -1847,15 +1631,10 @@ static int __maybe_unused cts305_suspend(struct device *dev)
     if (device_may_wakeup(dev)) {
         dev_info(&client->dev, "cts305 suspend: wakeup\n");
 
-        wdt->wake_irq_enabled = (enable_irq_wake(client->irq) == 0);
+        cts->wake_irq_enabled = (enable_irq_wake(client->irq) == 0);
     }
-    else
-        w8752_mode = W8752_MODE_SLEEP;
 
-    if (wdt->plt_id == PLT_WDT8752)
-        error = cts305_send_short_command(client, 0x82, w8752_mode);
-    else
-        error = cts305_send_command(client, VND_CMD_STOP, MODE_IDLE);
+    error = cts305_send_command(client, VND_CMD_STOP, MODE_IDLE);
 
     if (error) {
         enable_irq(client->irq);
@@ -1871,19 +1650,14 @@ static int __maybe_unused cts305_suspend(struct device *dev)
 static int __maybe_unused cts305_resume(struct device *dev)
 {
     struct i2c_client *client = to_i2c_client(dev);
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
     int error;
 
     if (device_may_wakeup(dev)) {
         dev_info(&client->dev, "cts305 resume: wakeup\n");
 
-        if (wdt->wake_irq_enabled)
+        if (cts->wake_irq_enabled)
             disable_irq_wake(client->irq);
-    }
-    else if (wdt->plt_id == PLT_WDT8752) {
-        /* WDT8752 should wakeup device by an operation first */
-        cts305_send_short_command(client, 0x82, W8752_MODE_SENSE);
-        udelay(100);
     }
 
     /*
@@ -1892,11 +1666,7 @@ static int __maybe_unused cts305_resume(struct device *dev)
     */
     mdelay(100);
 
-    if (wdt->plt_id == PLT_WDT8752)
-        error = cts305_send_short_command(client, 0x82,
-            W8752_MODE_SENSE);
-    else
-        error = cts305_send_command(client, VND_CMD_START, 0);
+    error = cts305_send_command(client, VND_CMD_START, 0);
 
     if (error)
         dev_err(&client->dev,
@@ -1906,23 +1676,23 @@ static int __maybe_unused cts305_resume(struct device *dev)
     enable_irq(client->irq);
 
     /* Release all slots on resume as start anew */
-    cts305_mt_release_contacts(wdt);
+    cts305_mt_release_contacts(cts);
 
     dev_info(&client->dev, "leave cts305 resume\n");
 
     return 0;
 }
 
-static int cts305_create_dbgfs(struct cts305_data *wdt)
+static int cts305_create_dbgfs(struct cts305_data *cts)
 {
-    wdt->dbg_root = debugfs_create_dir(CTS305_NAME, NULL);
-    if (!wdt->dbg_root)
+    cts->dbg_root = debugfs_create_dir(CTS305_NAME, NULL);
+    if (!cts->dbg_root)
         return -EINVAL;
 
-    wdt->dbg_st = debugfs_create_u32("dbg_st", 0644, wdt->dbg_root,
-        &wdt->rpt_scantime);
+    cts->dbg_st = debugfs_create_u32("dbg_st", 0644, cts->dbg_root,
+        &cts->rpt_scantime);
 
-    if (!wdt->dbg_st)
+    if (!cts->dbg_st)
         return -EINVAL;
 
     return 0;
@@ -1940,7 +1710,7 @@ static int cts305_setup_irq(struct i2c_client *client)
 static int cts305_ts_probe(struct i2c_client *client,
     const struct i2c_device_id *id)
 {
-    struct cts305_data *wdt;
+    struct cts305_data *cts;
     int error;
 
     printk("Enter %s\n", __func__);
@@ -1952,43 +1722,31 @@ static int cts305_ts_probe(struct i2c_client *client,
     if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
         return -ENXIO;
 
-    wdt = devm_kzalloc(&client->dev, sizeof(*wdt), GFP_KERNEL);
-    if (!wdt)
+    cts = devm_kzalloc(&client->dev, sizeof(*cts), GFP_KERNEL);
+    if (!cts)
         return -ENOMEM;
 
-    wdt->client = client;
-    mutex_init(&wdt->fw_mutex);
-    i2c_set_clientdata(client, wdt);
+    cts->client = client;
+    mutex_init(&cts->fw_mutex);
+    i2c_set_clientdata(client, cts);
 
-    snprintf(wdt->phys, sizeof(wdt->phys), "i2c-%u-%04x/input0",
+    snprintf(cts->phys, sizeof(cts->phys), "i2c-%u-%04x/input0",
         client->adapter->nr, client->addr);
 
-    wdt->func_report_type[0] = cts305_report_parallel_74;
-    wdt->func_report_type[1] = cts305_report_parallel_54;
-    wdt->func_report_type[2] = cts305_report_hybrid_54;
-    wdt->func_report_type[3] = cts305_report_hid_hybrid;
+    cts->func_report_type[0] = cts305_report_parallel_74;
+    cts->func_report_type[1] = cts305_report_parallel_54;
+    cts->func_report_type[2] = cts305_report_hybrid_54;
+    cts->func_report_type[3] = cts305_report_hid_hybrid;
 
-    wdt->pen_type = BTN_TOOL_PEN;
+    cts->pen_type = BTN_TOOL_PEN;
 
-    error = cts305_get_param(wdt);
+    error = cts305_get_param(cts);
     if (error)
         return error;
 
-    error = cts305_ts_create_input_device_mt(wdt);
+    error = cts305_ts_create_input_device_mt(cts);
     if (error)
         return error;
-
-    if (wdt->plt_id == PLT_WDT8752 && wdt->report_type == RPT_HID_HYBRID) {
-        error = cts305_ts_create_input_device_pen(wdt);
-        if (error)
-            return error;
-
-        if ((wdt->dev_status & 0x300)) {
-            error = cts305_ts_create_input_device_mouse(wdt);
-            if (error)
-                return error;
-        }
-    }
 
     error = cts305_setup_irq(client);
     if (error)
@@ -1999,7 +1757,7 @@ static int cts305_ts_probe(struct i2c_client *client,
     error = devm_request_threaded_irq(&client->dev, client->irq,
         NULL, cts305_ts_interrupt,
         IRQF_ONESHOT,
-        client->name, wdt);
+        client->name, cts);
     if (error) {
         dev_err(&client->dev, "request irq failed: %d\n", error);
         return error;
@@ -2017,23 +1775,23 @@ static int cts305_ts_probe(struct i2c_client *client,
         return error;
     }
 
-    error = cts305_create_dbgfs(wdt);
+    error = cts305_create_dbgfs(cts);
     if (error) {
         dev_err(&client->dev, "create debugfs failed: %d\n", error);
         return error;
     }
 
-    wdt->state = ST_REPORT;
+    cts->state = ST_REPORT;
 
     return 0;
 }
 
 static int cts305_ts_remove(struct i2c_client *client)
 {
-    struct cts305_data *wdt = i2c_get_clientdata(client);
+    struct cts305_data *cts = i2c_get_clientdata(client);
 
-    if (wdt->dbg_root)
-        debugfs_remove_recursive(wdt->dbg_root);
+    if (cts->dbg_root)
+        debugfs_remove_recursive(cts->dbg_root);
 
     sysfs_remove_group(&client->dev.kobj, &wdt87xx_attr_group);
 
