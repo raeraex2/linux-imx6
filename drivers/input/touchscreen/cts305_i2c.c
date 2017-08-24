@@ -1169,7 +1169,7 @@ static struct attribute *cts305_attrs[] = {
     NULL
 };
 
-static const struct attribute_group wdt87xx_attr_group = {
+static const struct attribute_group cts305_attr_group = {
     .attrs = cts305_attrs,
 };
 
@@ -1769,7 +1769,7 @@ static int cts305_ts_probe(struct i2c_client *client,
         return error;
     }
 
-    error = sysfs_create_group(&client->dev.kobj, &wdt87xx_attr_group);
+    error = sysfs_create_group(&client->dev.kobj, &cts305_attr_group);
     if (error) {
         dev_err(&client->dev, "create sysfs failed: %d\n", error);
         return error;
@@ -1793,7 +1793,7 @@ static int cts305_ts_remove(struct i2c_client *client)
     if (cts->dbg_root)
         debugfs_remove_recursive(cts->dbg_root);
 
-    sysfs_remove_group(&client->dev.kobj, &wdt87xx_attr_group);
+    sysfs_remove_group(&client->dev.kobj, &cts305_attr_group);
 
     return 0;
 }
